@@ -84,7 +84,7 @@ func (f *fsm) applyDeleteLeader() error {
 func (f *fsm) proposeDeleteLeader() error {
 	req := &deleteLeaderCmd{}
 
-	return f.proposeCmd(deleteStaleLeaderOp, req)
+	return f.proposeCmd(deleteLeaderOp, req)
 }
 
 type deleteStaleLeaderCmd struct {
