@@ -8,6 +8,7 @@ import (
 )
 
 var forceLeaderOp = "FORCE_LEADER"
+var deleteLeaderOp = "DELETE_LEADER"
 var raceLeaderOp = "RACE_LEADER"
 var deleteStaleLeaderOp = "DELETE_STALE_LEADER"
 var setMemberOp = "SET_MEMBER"
@@ -34,6 +35,10 @@ func (f *fsm) Apply(log canoe.LogData) error {
 		if err := f.applyRaceLeader(cmd.Data); err != nil {
 			return err
 		}
+	case deleteLeaderOp:
+		if err := f.applyDeleteLeader(); err != nil {
+			return err
+		}
 	case deleteStaleLeaderOp:
 		if err := f.applyDeleteStaleLeader(cmd.Data); err != nil {
 			return err
@@ -50,6 +55,24 @@ func (f *fsm) Apply(log canoe.LogData) error {
 		return errors.New("Unknown OP")
 	}
 	return nil
+}
+
+type deleteLeaderCmd struct {
+}
+
+// TODO: Send update down leader chan
+func (f *fsm) applyDeleteLeader() error {
+	f.Lock()
+	f.leader = nil
+	f.Unlock()
+
+	return nil
+}
+
+func (f *fsm) proposeDeleteLeader() error {
+	req := &deleteLeaderCmd{}
+
+	return f.proposeCmd(deleteStaleLeaderOp, req)
 }
 
 type deleteStaleLeaderCmd struct {

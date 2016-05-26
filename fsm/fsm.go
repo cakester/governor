@@ -106,6 +106,18 @@ func (f *fsm) run() error {
 	return nil
 }
 
+func (f *fsm) RaceForLeader(leader Leader) error {
+	return f.proposeRaceLeader(leader)
+}
+
+func (f *fsm) ForceLeader(leader Leader) error {
+	return f.proposeForceLeader(leader)
+}
+
+func (f *fsm) DeleteLeader() error {
+	return f.proposeDeleteLeader()
+}
+
 func (f *fsm) Leader(leader Leader) error {
 	f.Lock()
 	defer f.Unlock()
@@ -115,6 +127,27 @@ func (f *fsm) Leader(leader Leader) error {
 	}
 
 	return leader.Unmarshal(f.leader.Data)
+}
+
+func (f *fsm) SetMember(member Member) error {
+	return f.proposeSetMember(member)
+}
+
+func (f *fsm) DeleteMember(id uint64) error {
+	return f.proposeDeleteMember(id)
+}
+
+func (f *fsm) Member(id uint64, member Member) (bool, error) {
+	f.Lock()
+	defer f.Unlock()
+	if data, ok := f.members[id]; ok {
+		err := member.Unmarshal(data)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // Members gives all the members of the cluster
