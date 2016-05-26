@@ -2,7 +2,6 @@ package fsm
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/compose/canoe"
 	"time"
 )
@@ -52,7 +51,7 @@ func (f *fsm) Apply(log canoe.LogData) error {
 			return err
 		}
 	default:
-		return errors.New("Unknown OP")
+		return ErrorUnknownOperation
 	}
 	return nil
 }
@@ -60,11 +59,24 @@ func (f *fsm) Apply(log canoe.LogData) error {
 type deleteLeaderCmd struct {
 }
 
-// TODO: Send update down leader chan
 func (f *fsm) applyDeleteLeader() error {
+	update := &LeaderUpdate{
+		Type: LeaderUpdateDeletedType,
+	}
+
 	f.Lock()
+	defer f.Unlock()
+
+	if f.leader != nil {
+		update.OldLeader = f.leader.Data
+	}
+
 	f.leader = nil
-	f.Unlock()
+
+	select {
+	case f.leaderc <- update:
+	default:
+	}
 
 	return nil
 }
@@ -79,21 +91,33 @@ type deleteStaleLeaderCmd struct {
 	Time int64 `json:"time"`
 }
 
-// TODO: Send update down leader chan
 func (f *fsm) applyDeleteStaleLeader(cmdData []byte) error {
 	var cmd deleteStaleLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
 		return err
 	}
 
+	update := &LeaderUpdate{
+		Type: LeaderUpdateDeletedType,
+	}
+
 	f.Lock()
+	defer f.Unlock()
+
+	if f.leader != nil {
+		update.OldLeader = f.leader.Data
+	}
+
 	if cmd.Time >= f.leader.Time+f.leader.TTL {
 		f.leader = nil
 	} else if cmd.Time < f.leader.Time {
 		return ErrorBadTTLTimestamp
 	}
-	f.Unlock()
 
+	select {
+	case f.leaderc <- update:
+	default:
+	}
 	return nil
 }
 
@@ -109,16 +133,31 @@ type forceLeaderCmd struct {
 	leaderBackend
 }
 
-// TODO: Send update down leader chan
 func (f *fsm) applyForceLeader(cmdData []byte) error {
 	var cmd forceLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
 		return err
 	}
 
+	update := &LeaderUpdate{
+		Type: LeaderUpdateSetType,
+	}
+
 	f.Lock()
+	defer f.Unlock()
+
+	if f.leader != nil {
+		update.OldLeader = f.leader.Data
+	}
+
 	f.leader = &cmd.leaderBackend
-	f.Unlock()
+
+	update.CurrentLeader = f.leader.Data
+
+	select {
+	case f.leaderc <- update:
+	default:
+	}
 
 	return nil
 }
@@ -145,7 +184,6 @@ type raceLeaderCmd struct {
 	leaderBackend
 }
 
-// TODO: Send leader update down chan
 func (f *fsm) applyRaceLeader(cmdData []byte) error {
 	var cmd raceLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
@@ -153,10 +191,20 @@ func (f *fsm) applyRaceLeader(cmdData []byte) error {
 	}
 
 	f.Lock()
+	defer f.Unlock()
 	if f.leader == nil {
 		f.leader = &cmd.leaderBackend
+
+		update := &LeaderUpdate{
+			Type:          LeaderUpdateSetType,
+			CurrentLeader: f.leader.Data,
+		}
+
+		select {
+		case f.leaderc <- update:
+		default:
+		}
 	}
-	f.Unlock()
 
 	return nil
 }
@@ -190,8 +238,19 @@ func (f *fsm) applySetMember(cmdData []byte) error {
 	}
 
 	f.Lock()
+	defer f.Unlock()
+	update := &MemberUpdate{
+		Type:      MemberUpdateSetType,
+		OldMember: f.members[cmd.ID],
+	}
 	f.members[cmd.ID] = cmd.Data
-	f.Unlock()
+
+	update.CurrentMember = f.members[cmd.ID]
+
+	select {
+	case f.memberc <- update:
+	default:
+	}
 
 	return nil
 }
@@ -214,7 +273,6 @@ type deleteMemberCmd struct {
 	ID uint64 `json:"id"`
 }
 
-// TODO: Send update down the update chan
 func (f *fsm) applyDeleteMember(cmdData []byte) error {
 	var cmd deleteMemberCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
@@ -222,10 +280,19 @@ func (f *fsm) applyDeleteMember(cmdData []byte) error {
 	}
 
 	f.Lock()
+	defer f.Unlock()
 	if _, ok := f.members[cmd.ID]; ok {
+		update := &MemberUpdate{
+			Type:      MemberUpdateDeletedType,
+			OldMember: f.members[cmd.ID],
+		}
+
+		select {
+		case f.memberc <- update:
+		default:
+		}
 		delete(f.members, cmd.ID)
 	}
-	f.Unlock()
 
 	return nil
 }

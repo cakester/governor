@@ -18,11 +18,11 @@ type fsm struct {
 	raft *canoe.Node
 
 	leader    *leaderBackend
-	leaderc   chan<- LeaderUpdate
+	leaderc   chan *LeaderUpdate
 	leaderTTL int64
 
 	members map[uint64][]byte
-	memberc chan<- MemberUpdate
+	memberc chan *MemberUpdate
 
 	stopc    chan struct{}
 	stoppedc chan struct{}
@@ -73,7 +73,6 @@ func NewGovernorFSM(config *Config) (*fsm, error) {
 	return newFSM, nil
 }
 
-// TODO: Setup delete leader runner
 func (f *fsm) start() error {
 	if err := f.raft.Start(); err != nil {
 		return err
@@ -106,6 +105,15 @@ func (f *fsm) run() error {
 	return nil
 }
 
+// LeaderCh returns a channel with LeaderUpdates
+// LeaderCh does not block. Note: this means if the user is not monitoring
+// LeaderCh then the LeaderUpdate will be lost it is the user's
+// responsibility to ensure the channel is consumed as aggressively as is needed
+// based on expected update to the leader
+func (f *fsm) LeaderCh() <-chan *LeaderUpdate {
+	return f.leaderc
+}
+
 func (f *fsm) RaceForLeader(leader Leader) error {
 	return f.proposeRaceLeader(leader)
 }
@@ -127,6 +135,10 @@ func (f *fsm) Leader(leader Leader) error {
 	}
 
 	return leader.Unmarshal(f.leader.Data)
+}
+
+func (f *fsm) MemberCh() <-chan *MemberUpdate {
+	return f.memberc
 }
 
 func (f *fsm) SetMember(member Member) error {
@@ -230,26 +242,35 @@ func (f *fsm) Destroy() error {
 	return nil
 }
 
-// TODO: Redo restoration
-func (f *fsm) Restore(data canoe.SnapshotData) error {
-	var members map[uint64][]byte
+type fsmSnapshot struct {
+	Members map[uint64][]byte `json:"members"`
+	Leader  *leaderBackend    `json:"leader"`
+}
 
-	if err := json.Unmarshal(data, &members); err != nil {
+func (f *fsm) Restore(data canoe.SnapshotData) error {
+	var fsmSnap fsmSnapshot
+
+	if err := json.Unmarshal(data, &fsmSnap); err != nil {
 		return err
 	}
 
 	f.Lock()
 	defer f.Unlock()
+	// Don't worry with chan notifications here
+	// As snapshots are only applied at startup
+	f.members = fsmSnap.Members
+	f.leader = fsmSnap.Leader
 
-	f.members = members
 	return nil
 }
 
-// TODO: Redo Snapshot
 func (f *fsm) Snapshot() (canoe.SnapshotData, error) {
 	f.Lock()
 	defer f.Unlock()
-	return json.Marshal(f.members)
+	return json.Marshal(&fsmSnapshot{
+		Members: f.members,
+		Leader:  f.leader,
+	})
 }
 
 func (f *fsm) RegisterAPI(router *mux.Router) {

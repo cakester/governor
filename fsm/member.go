@@ -1,8 +1,7 @@
 package fsm
 
-var MemberRemovedOp = "MEMBER_REMOVED"
-var MemberUpdatedOp = "MEMBER_UPDATED"
-var MemberAddedOp = "MEMBER_ADDED"
+var MemberUpdateDeletedType = "MEMBER_DELETED"
+var MemberUpdateSetType = "MEMBER_SET"
 
 type Member interface {
 	// ID returns an unique identifier
@@ -14,7 +13,8 @@ type Member interface {
 }
 
 type MemberUpdate struct {
-	Op string
+	Type string
 	// The Marshalled Member structs
-	Member []byte
+	OldMember     []byte
+	CurrentMember []byte
 }

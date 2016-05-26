@@ -1,8 +1,8 @@
 package fsm
 
-var LeaderUpdateExpiredOp = "LEADER_EXPIRED"
-var LeaderUpdateChangedOp = "LEADER_CHANGED"
-var LeaderUpdateDeletedOp = "LEADER_DELETED"
+var LeaderUpdateExpiredType = "LEADER_EXPIRED"
+var LeaderUpdateSetType = "LEADER_SET"
+var LeaderUpdateDeletedType = "LEADER_DELETED"
 
 type Leader struct {
 	Member
@@ -16,7 +16,7 @@ type leaderBackend struct {
 }
 
 type LeaderUpdate struct {
-	Op string
+	Type string
 
 	// The Marshalled Leader structs
 	CurrentLeader []byte
